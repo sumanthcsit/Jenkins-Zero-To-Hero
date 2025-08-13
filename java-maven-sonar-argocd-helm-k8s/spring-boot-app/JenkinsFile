@@ -60,7 +60,10 @@ pipeline {
                     git config --global user.email "sumanthcsit@gmail.com"
                     git config --global user.name "sumanthcsit"
                     git config --global --add safe.directory /var/lib/jenkins/workspace/demoCICD
+                    git add .
+                    git status
                     git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                    git status
                     git commit -m "Update deployment image to version ${BUILD_NUMBER}"
                     git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
                 '''
