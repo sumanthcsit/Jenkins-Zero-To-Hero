@@ -1,32 +1,73 @@
 pipeline {
-    // This agent block is correctly configured to sync user permissions
-    // and provide access to the host's Docker daemon.
-    agent {
-        docker {
-            image 'knaishadam/mymvnjdk17dckrgit_img:1.0'
-            args '-u $(id -u):$(id -g) -v /var/run/docker.sock:/var/run/docker.sock'
-        }
+  agent {
+    docker {
+      //image 'abhishekf5/maven-abhishek-docker-agent:v1'
+      image 'knaishadam/mymvnjdk17dckrgit_img:1.0'
+      //args '--user root -v /var/run/docker.sock:/var/run/docker.sock' // mount Docker socket to access the host's Docker daemon
+      args '-u $(id -u):$(id -g) -v /var/run/docker.sock:/var/run/docker.sock'
     }
+  }
 
-    stages {
-        // This is the correct way to check out your code.
-        stage('Checkout') {
-            steps {
-                // 'checkout scm' is the modern, correct command. It automatically
-                // checks out the branch associated with the pipeline run from
-                // the repository you configured in the Jenkins UI.
-                checkout scm
+  stages {
+    stage('Checkout') {
+      steps {
+        cleanWs()
+        sh 'echo passed'
+        //git branch: 'main', url: 'https://github.com/sumanthcsit/Jenkins-Zero-To-Hero.git'
+      }
+    }
+    stage('Build and Test') {
+      steps {
+        // sh 'ls -ltr'
+        // build the project and create a JAR file
+        sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn clean package'
+      }
+    }
+    stage('Static Code Analysis') {
+      environment {
+        SONAR_URL = "http://51.20.120.233:9000"
+      }
+      steps {
+        withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+          sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL} -Dsonar.scanner.skipJreProvisioning=true'
+        }
+      }
+    }
+    stage('Build and Push Docker Image') {
+      environment {
+        DOCKER_IMAGE = "knaishadam/demo-cicd:${BUILD_NUMBER}"
+        // DOCKERFILE_LOCATION = "java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile"
+        REGISTRY_CREDENTIALS = credentials('docker-cred')
+      }
+      steps {
+        script {
+            sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
+            def dockerImage = docker.image("${DOCKER_IMAGE}")
+            docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
+                dockerImage.push()
             }
         }
-
-        // Add your other stages (Build, Sonar, etc.) back here AFTER
-        // you confirm that the 'Checkout' stage succeeds.
-        /*
-        stage('Build and Test') {
-            steps {
-                sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn clean package'
+      }
+    }
+    stage('Update Deployment File') {
+        environment {
+            GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
+            GIT_USER_NAME = "sumanthcsit"
+        }
+        steps {
+            withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
+                sh '''
+                    BUILD_NUMBER=${BUILD_NUMBER}
+                    sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                    git config --global user.email "sumanthcsit@gmail.com"
+                    git config --global user.name "sumanthcsit"
+                    git config --global --add safe.directory /var/lib/jenkins/workspace/demoCICD
+                    git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+                    git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                    git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+                '''
             }
         }
-        */
     }
+  }
 }
