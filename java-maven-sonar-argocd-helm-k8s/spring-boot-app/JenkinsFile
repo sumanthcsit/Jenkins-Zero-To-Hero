@@ -7,14 +7,10 @@ pipeline {
     }
   }
 
-  options {
-        // This will delete the workspace before the pipeline runs
-        cleanWs() 
-    }
-    
   stages {
     stage('Checkout') {
       steps {
+        cleanWs()
         sh 'echo passed'
         //git branch: 'main', url: 'https://github.com/sumanthcsit/Jenkins-Zero-To-Hero.git'
       }
